@@ -27,6 +27,12 @@ constexpr uint32_t kConnectTimeoutMs = 8000;
 constexpr size_t kMaxReportMap = 512;
 constexpr size_t kMaxScanEntries = 40;
 
+// Scan list ranking: HID devices first, then strongest signal.
+bool ranksBelow(const BleScanEntry& a, const BleScanEntry& b) {
+  if (a.hid != b.hid) return !a.hid;
+  return a.rssi < b.rssi;
+}
+
 std::string hexBytes(const uint8_t* d, size_t n) {
   static const char* digits = "0123456789abcdef";
   std::string s;
@@ -131,10 +137,7 @@ void BleHidHost::requestForget() {
 BleStatus BleHidHost::status() {
   std::lock_guard<std::mutex> lock(mu_);
   BleStatus s = status_;
-  std::sort(s.scan.begin(), s.scan.end(), [](const BleScanEntry& a, const BleScanEntry& b) {
-    if (a.hid != b.hid) return a.hid;
-    return a.rssi > b.rssi;
-  });
+  std::sort(s.scan.begin(), s.scan.end(), [](const BleScanEntry& a, const BleScanEntry& b) { return ranksBelow(b, a); });
   return s;
 }
 
@@ -151,6 +154,10 @@ void BleHidHost::onScanResult(const BleScanEntry& e) {
       if (it->name.empty()) it->name = name;
     } else if (status_.scan.size() < kMaxScanEntries) {
       status_.scan.push_back(e);
+    } else {
+      // Crowded room: keep the best kMaxScanEntries, evicting the weakest.
+      auto weakest = std::min_element(status_.scan.begin(), status_.scan.end(), ranksBelow);
+      if (ranksBelow(*weakest, e)) *weakest = e;
     }
   }
   bump();
