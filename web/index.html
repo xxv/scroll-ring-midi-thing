@@ -1,0 +1,566 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scroll Ring MIDI</title>
+<style>
+:root {
+  --bg: #f4f4f1; --card: #ffffff; --ink: #1d1d1b; --muted: #6b6b66; --line: #deded8;
+  --accent: #2f6fde; --accent-ink: #ffffff; --good: #1f8a4c; --warn: #b26a00; --bad: #c0392b;
+  --hot: #ffcc33; --mono-bg: #f0f0eb;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161615; --card: #20201e; --ink: #ecece6; --muted: #9a9a92; --line: #34342f;
+    --accent: #6c9cf0; --accent-ink: #0e1420; --good: #4cc27f; --warn: #e3a33b; --bad: #ef6b5b;
+    --hot: #ffd24d; --mono-bg: #2a2a27;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+header { position: sticky; top: 0; z-index: 5; background: var(--bg); border-bottom: 1px solid var(--line);
+  padding: 10px 16px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+header h1 { font-size: 17px; margin: 0 auto 0 0; }
+main { max-width: 860px; margin: 0 auto; padding: 12px 16px 60px; }
+section.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin: 12px 0; }
+section.card > h2 { font-size: 15px; margin: 0 0 10px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+section.card > h2 .spacer { flex: 1; }
+.pill { font-size: 12px; padding: 3px 9px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.pill.good { color: var(--good); border-color: var(--good); }
+.pill.warn { color: var(--warn); border-color: var(--warn); }
+.pill.bad { color: var(--bad); border-color: var(--bad); }
+button { font: inherit; font-size: 14px; padding: 6px 12px; border-radius: 7px; border: 1px solid var(--line);
+  background: var(--card); color: var(--ink); cursor: pointer; }
+button:hover { border-color: var(--muted); }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+button.danger { color: var(--bad); }
+button:disabled { opacity: .45; cursor: default; }
+button.small { font-size: 12px; padding: 3px 8px; }
+select { max-width: 100%; }
+input, select { font: inherit; font-size: 14px; padding: 5px 7px; border-radius: 6px; border: 1px solid var(--line);
+  background: var(--card); color: var(--ink); min-width: 0; }
+input[type=number] { width: 70px; }
+input.mono, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; }
+input.bad { border-color: var(--bad); }
+label { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 13px; }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.muted { color: var(--muted); }
+.small { font-size: 12.5px; }
+.hidden { display: none !important; }
+
+.device { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
+.device:first-child { border-top: 0; }
+.device .who { flex: 1; min-width: 0; }
+.device .who b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.badge { font-size: 11px; padding: 1px 6px; border-radius: 4px; background: var(--accent); color: var(--accent-ink); margin-left: 4px; }
+
+.mapping { border: 1px solid var(--line); border-radius: 9px; padding: 10px; margin: 10px 0; transition: background .08s, border-color .08s; }
+.mapping.on { background: color-mix(in srgb, var(--hot) 30%, var(--card)); border-color: var(--hot); }
+.mapping.disabled { opacity: .55; }
+.mapping.learning { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent); }
+.mapping .top { display: flex; align-items: center; gap: 8px; }
+.mapping .top input.name { flex: 1; font-weight: 600; }
+.lamp { width: 12px; height: 12px; border-radius: 50%; background: var(--line); flex: none; }
+.mapping.on .lamp { background: var(--hot); box-shadow: 0 0 8px var(--hot); }
+.mapping .fields { margin-top: 8px; }
+.mapping .summary { margin-top: 6px; }
+.mapping details { margin-top: 8px; }
+.mapping details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+.mapping .adv { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin-top: 8px; }
+.mapping .adv label.block { display: block; }
+.mapping .adv label.block input { display: block; margin-top: 3px; }
+.mapping .adv input.mono { width: 100%; }
+.gesture { list-style: none; padding: 0; margin: 4px 0 0; }
+.gesture li { display: flex; gap: 6px; align-items: center; padding: 2px 4px; border-radius: 4px; }
+.gesture li.sel { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.gesture li code { flex: 1; overflow-wrap: anywhere; }
+
+#learn { border-color: var(--accent); }
+#learn .dots { display: flex; gap: 6px; margin: 8px 0; }
+#learn .dots span { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--accent); }
+#learn .dots span.done { background: var(--accent); }
+#learn .dots span.now { animation: pulse 1s infinite; }
+@keyframes pulse { 50% { background: color-mix(in srgb, var(--accent) 45%, transparent); } }
+.sample { margin: 6px 0; padding: 6px 8px; background: var(--mono-bg); border-radius: 6px; max-height: 140px; overflow: auto; }
+.sample div { white-space: nowrap; }
+.notes { margin: 8px 0 0; padding-left: 18px; }
+.notes li.warn { color: var(--warn); }
+
+#log { height: 260px; overflow: auto; background: var(--mono-bg); border-radius: 6px; padding: 6px 8px; }
+#log div { white-space: pre-wrap; overflow-wrap: anywhere; }
+#log .k-hid { color: var(--muted); }
+#log .k-hid .fx { color: var(--good); }
+#log .k-midi { color: var(--good); }
+#log .k-warn, #log .k-error { color: var(--bad); }
+#log .k-ble { color: var(--accent); }
+#log .k-learn { color: var(--warn); }
+#log .t { color: var(--muted); opacity: .7; }
+
+#toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); background: var(--ink); color: var(--bg);
+  padding: 8px 14px; border-radius: 8px; font-size: 14px; max-width: calc(100% - 32px); z-index: 20; }
+pre.map { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 160px; overflow: auto; background: var(--mono-bg); padding: 6px; border-radius: 6px; margin: 4px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Scroll Ring MIDI</h1>
+  <span id="pill-ring" class="pill">Ring: …</span>
+  <span id="pill-usb" class="pill">USB: …</span>
+  <span id="pill-link" class="pill bad hidden">UI offline</span>
+</header>
+<main>
+
+<section class="card hidden" id="learn">
+  <h2><span id="learn-title">Learning</span><span class="spacer"></span>
+    <button id="learn-done" class="primary">Done</button>
+    <button id="learn-cancel">Cancel</button>
+    <button id="learn-close" class="hidden">Close</button>
+  </h2>
+  <div id="learn-msg"></div>
+  <div class="dots" id="learn-dots"></div>
+  <ul class="notes" id="learn-notes"></ul>
+  <div id="learn-samples"></div>
+</section>
+
+<section class="card" id="ring">
+  <h2>Ring<span class="spacer"></span>
+    <button id="btn-scan">Scan</button>
+  </h2>
+  <div id="ring-status"></div>
+  <div class="row" id="ring-actions" style="margin-top:8px"></div>
+  <div id="scan-wrap" class="hidden" style="margin-top:10px">
+    <div class="muted small" id="scan-msg"></div>
+    <div id="scan-list"></div>
+    <button class="small hidden" id="scan-more"></button>
+  </div>
+  <details id="ring-details" class="hidden" style="margin-top:10px">
+    <summary class="muted small">HID details</summary>
+    <div class="small" id="ring-sources"></div>
+    <div class="small muted" style="margin-top:6px">Report map (HID descriptor):</div>
+    <pre class="map mono" id="ring-map"></pre>
+  </details>
+</section>
+
+<section class="card">
+  <h2>Mappings<span class="spacer"></span>
+    <button id="btn-add" class="primary">+ Add &amp; learn</button>
+  </h2>
+  <div id="mappings"></div>
+  <p class="muted small" id="no-mappings">No mappings yet. Pair the ring, then press <b>+ Add &amp; learn</b> and press a ring button a few times.</p>
+</section>
+
+<section class="card">
+  <h2>Monitor<span class="spacer"></span>
+    <label><input type="checkbox" id="mon-hid" checked> HID reports</label>
+    <label><input type="checkbox" id="mon-pause"> Pause</label>
+    <button class="small" id="mon-clear">Clear</button>
+  </h2>
+  <div id="log" class="mono"></div>
+</section>
+
+<section class="card">
+  <details>
+    <summary><b>Settings &amp; backup</b></summary>
+    <div class="row" style="margin-top:10px">
+      <label title="Silence that ends a gesture (used by 'end of gesture' release)">Gesture gap <input type="number" id="set-gestureGapMs" min="20" max="5000"> ms</label>
+      <label title="Presses captured when learning">Learn presses <input type="number" id="set-learnSamples" min="1" max="5"></label>
+      <label title="Silence that ends one learned press">Learn gap <input type="number" id="set-learnGapMs" min="50" max="5000"> ms</label>
+      <label title="How long after a held press its key-up is still counted">Learn hold <input type="number" id="set-learnTailMs" min="0" max="10000"> ms</label>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button id="btn-export">Export mappings</button>
+      <label class="small"><input type="file" id="file-import" accept=".json,application/json"> Import</label>
+      <span class="spacer"></span>
+      <button id="btn-panic" class="danger">MIDI panic (all notes off)</button>
+    </div>
+  </details>
+</section>
+</main>
+<div id="toast" class="hidden"></div>
+
+<script>
+'use strict';
+const $ = (id) => document.getElementById(id);
+const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const noteName = (n) => NOTE_NAMES[n % 12] + (Math.floor(n / 12) - 1);
+const RELEASE_LABELS = {
+  report: 'release report (key up / lift)',
+  gesture: 'end of gesture',
+  timed: 'fixed time',
+};
+
+let S = null;               // last /api/state
+let seq = 0, rev = -1, brev = -1;
+let showAllScan = false;
+let learnClosedFor = 0;     // result id the user dismissed
+const flashTimers = {};
+const lastNoteEvent = {};  // mapping id -> time of its last note event
+
+function el(tag, attrs, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k === 'class') e.className = v;
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else if (v !== undefined && v !== null && v !== false) e.setAttribute(k, v === true ? '' : v);
+  }
+  for (const k of kids.flat()) if (k !== null && k !== undefined) e.append(k.nodeType ? k : String(k));
+  return e;
+}
+
+function toast(msg, ms = 2600) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.remove('hidden');
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => t.classList.add('hidden'), ms);
+}
+
+async function api(path, body) {
+  try {
+    const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                  body: body === undefined ? '' : JSON.stringify(body) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.ok === false) { toast('Error: ' + (j.error || r.status)); return null; }
+    rev = -1;  // force a state refresh on the next poll
+    return j;
+  } catch (e) { toast('Device unreachable'); return null; }
+}
+
+// ---------------------------------------------------------------- polling
+async function loadState() {
+  const r = await fetch('/api/state');
+  S = await r.json();
+  rev = S.rev; brev = S.brev;
+  render();
+}
+
+async function poll() {
+  try {
+    const r = await fetch('/api/events?since=' + seq);
+    const j = await r.json();
+    if (j.seq < seq) { seq = 0; rev = -1; }  // device rebooted
+    for (const e of j.events) onEvent(e);
+    seq = j.seq;
+    if (j.rev !== rev || j.brev !== brev) await loadState();
+    $('pill-link').classList.add('hidden');
+  } catch (e) {
+    $('pill-link').classList.remove('hidden');
+  }
+  setTimeout(poll, 250);
+}
+
+// ---------------------------------------------------------------- monitor
+function onEvent(e) {
+  if (e.k === 'midi' && e.id) flash(e.id, e.on);
+  if ($('mon-pause').checked) return;
+  if (e.k === 'hid' && !$('mon-hid').checked) return;
+  const log = $('log');
+  const stick = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
+  const t = el('span', { class: 't' }, (e.t / 1000).toFixed(2).padStart(8) + ' ');
+  let line;
+  if (e.k === 'hid') {
+    line = el('div', { class: 'k-hid' }, t, e.r, e.m ? el('span', { class: 'fx' }, '  → ' + e.m) : null);
+  } else {
+    line = el('div', { class: 'k-' + e.k }, t, e.m);
+  }
+  log.append(line);
+  while (log.childNodes.length > 400) log.firstChild.remove();
+  if (stick) log.scrollTop = log.scrollHeight;
+}
+
+function flash(id, on) {
+  lastNoteEvent[id] = Date.now();
+  const row = document.querySelector(`.mapping[data-id="${id}"]`);
+  if (!row) return;
+  clearTimeout(flashTimers[id]);
+  if (on) row.classList.add('on');
+  // keep very short notes visible for a moment
+  else flashTimers[id] = setTimeout(() => row.classList.remove('on'), 120);
+}
+
+// ---------------------------------------------------------------- render
+function render() {
+  renderHeader();
+  renderRing();
+  renderLearn();
+  renderMappings();
+  renderSettings();
+}
+
+function renderHeader() {
+  const b = S.ble;
+  const ring = $('pill-ring');
+  const states = { connected: ['good', 'Ring connected'], connecting: ['warn', 'Ring: waiting'],
+                   scanning: ['warn', 'Scanning…'], idle: ['', b.hasTarget ? 'Ring: offline' : 'No ring paired'] };
+  const [cls, txt] = states[b.state] || ['', b.state];
+  ring.className = 'pill ' + cls;
+  ring.textContent = txt + (b.state === 'connected' && b.battery !== undefined ? ` · ${b.battery}%` : '');
+  const usb = $('pill-usb');
+  usb.className = 'pill ' + (S.usb ? 'good' : 'warn');
+  usb.textContent = S.usb ? 'USB MIDI ready' : 'USB: not connected';
+}
+
+let ringKey = '';
+function renderRing() {
+  const b = S.ble;
+  // Rebuilding the buttons while the user taps one can swallow the tap, so
+  // only re-render when something visible changed.
+  const key = JSON.stringify([b, showAllScan]);
+  if (key === ringKey) return;
+  ringKey = key;
+  const name = b.name || b.addr;
+  const status = $('ring-status');
+  const actions = $('ring-actions');
+  status.replaceChildren();
+  actions.replaceChildren();
+
+  if (b.state === 'connected') {
+    status.append(el('div', {}, 'Connected to ', el('b', {}, name), el('span', { class: 'muted small' }, ` (${b.addr})`)));
+  } else if (b.hasTarget && b.autoConnect) {
+    status.append(el('div', {}, 'Waiting for ', el('b', {}, name),
+      el('div', { class: 'muted small' }, 'Press a button on the ring to wake it. It reconnects automatically.')));
+  } else if (b.hasTarget) {
+    status.append(el('div', {}, el('b', {}, name), ' is disconnected.'));
+  } else {
+    status.append(el('div', { class: 'muted' },
+      'No ring paired. Unpair the ring from your phone (or switch the phone\'s Bluetooth off), put the ring in pairing mode, then press Scan.'));
+  }
+  if (b.error) status.append(el('div', { class: 'small', style: 'color:var(--bad)' }, b.error));
+
+  if (b.hasTarget) {
+    if (b.state === 'connected' || (b.autoConnect && b.state !== 'scanning')) {
+      actions.append(el('button', { onclick: () => api('/api/ble/disconnect') }, 'Disconnect'));
+    } else {
+      actions.append(el('button', { onclick: () => api('/api/ble/connect', { addr: b.addr, addrType: b.addrType, name: b.name }) }, 'Reconnect'));
+    }
+    actions.append(el('button', { class: 'danger', onclick: () => {
+      if (confirm('Forget this ring? You will need to pair it again.')) api('/api/ble/forget');
+    } }, 'Forget'));
+  }
+
+  // scan results
+  const scanning = b.state === 'scanning';
+  $('btn-scan').disabled = scanning;
+  $('btn-scan').textContent = scanning ? 'Scanning…' : 'Scan';
+  const wrap = $('scan-wrap');
+  const list = $('scan-list');
+  const shown = b.scan.filter((d) => showAllScan || d.hid);
+  const hiddenCount = b.scan.length - shown.length;
+  wrap.classList.toggle('hidden', !scanning && b.scan.length === 0);
+  $('scan-msg').textContent = scanning ? 'Looking for Bluetooth LE devices… HID devices (the ring) are listed first.'
+                                       : (b.scan.length ? 'Pick your ring:' : '');
+  list.replaceChildren(...shown.map((d) => el('div', { class: 'device' },
+    el('div', { class: 'who' },
+      el('b', {}, d.name || '(no name)', d.hid ? el('span', { class: 'badge' }, 'HID') : null),
+      el('span', { class: 'muted small mono' }, `${d.addr} · ${d.rssi} dBm`)),
+    el('button', { class: d.hid ? 'primary' : '', onclick: () => {
+      showAllScan = false;
+      api('/api/ble/connect', { addr: d.addr, addrType: d.addrType, name: d.name });
+    } }, d.addr === b.addr && b.state === 'connected' ? 'Connected' : 'Pair'))));
+  if (scanning && shown.length === 0) list.append(el('div', { class: 'muted small' }, 'Nothing that looks like a HID device yet…'));
+  const more = $('scan-more');
+  more.classList.toggle('hidden', hiddenCount === 0 && !showAllScan);
+  more.textContent = showAllScan ? 'Hide non-HID devices' : `Show ${hiddenCount} other device${hiddenCount === 1 ? '' : 's'}`;
+
+  // HID details
+  $('ring-details').classList.toggle('hidden', b.sources.length === 0);
+  $('ring-sources').textContent = 'Input reports: ' +
+    b.sources.map((s) => `${s.handle} (${s.kind}${s.reportId ? ', report id ' + s.reportId : ''})`).join(', ');
+  $('ring-map').textContent = b.reportMap || '(could not read)';
+}
+
+function renderLearn() {
+  const L = S.learn;
+  const card = $('learn');
+  const m = S.mappings.find((x) => x.id === (L.active ? L.id : L.resultId));
+  const showResult = !L.active && L.resultId && L.resultId !== learnClosedFor && m;
+  card.classList.toggle('hidden', !L.active && !showResult);
+  if (!L.active && !showResult) return;
+
+  const name = m ? (m.name || '#' + m.id) : '';
+  $('learn-done').classList.toggle('hidden', !L.active);
+  $('learn-cancel').classList.toggle('hidden', !L.active);
+  $('learn-close').classList.toggle('hidden', L.active);
+  $('learn-done').disabled = L.samples.length === 0 && !L.capturing;
+  $('learn-title').textContent = L.active ? `Learning “${name}”` : `Learned “${name}”`;
+
+  const n = L.samples.length;
+  let msg;
+  if (!L.active) msg = '';
+  else if (S.ble.state !== 'connected') msg = 'The ring is not connected — connect it first.';
+  else if (L.capturing) msg = 'Capturing…';
+  else if (n >= L.want) msg = 'Waiting a moment for the button release…';
+  else msg = `Press and release the ring button (${n + 1} of ${L.want}).`;
+  $('learn-msg').textContent = msg;
+
+  const dots = $('learn-dots');
+  dots.classList.toggle('hidden', !L.active);
+  dots.replaceChildren(...Array.from({ length: L.want }, (_, i) =>
+    el('span', { class: i < n ? 'done' : (i === n && L.capturing ? 'now' : '') })));
+
+  $('learn-notes').replaceChildren(...(L.active ? [] : L.notes.map((t, i) => el('li', { class: i ? 'warn' : '' }, t))));
+
+  $('learn-samples').replaceChildren(...L.samples.map((s, i) => el('div', {},
+    el('div', { class: 'small muted' }, `Press ${i + 1}: ${s.length} report${s.length === 1 ? '' : 's'}`),
+    el('div', { class: 'sample mono' }, s.map((r, j) => el('div', {}, `#${j}  ${r}`))))));
+}
+
+function noteSelect(value, onchange) {
+  const s = el('select', { onchange });
+  for (let n = 0; n < 128; n++) s.append(el('option', { value: n }, `${noteName(n)} (${n})`));
+  s.value = value;
+  return s;
+}
+
+function channelSelect(value, onchange) {
+  const s = el('select', { onchange });
+  for (let c = 1; c <= 16; c++) s.append(el('option', { value: c }, c));
+  s.value = value;
+  return s;
+}
+
+function save(id, fields) { return api('/api/mapping', Object.assign({ id }, fields)); }
+
+// Set a field's value unless the user is editing it.
+function setVal(input, v) {
+  if (document.activeElement !== input && String(input.value) !== String(v)) input.value = v;
+}
+
+function buildMapping(m) {
+  const id = m.id;
+  const row = el('div', { class: 'mapping', 'data-id': id });
+  const f = row.f = {};
+
+  f.name = el('input', { class: 'name', maxlength: 40, placeholder: 'Name',
+    onchange: (e) => save(id, { name: e.target.value }) });
+  f.learn = el('button', { onclick: () => api('/api/learn/start', { id }) }, 'Learn');
+  f.test = el('button', { title: 'Send this note now', onclick: () => api('/api/mapping/test', { id }) }, 'Test');
+  row.append(el('div', { class: 'top' }, el('span', { class: 'lamp' }), f.name, f.learn, f.test));
+
+  f.note = noteSelect(m.number, (e) => save(id, { number: +e.target.value }));
+  f.channel = channelSelect(m.channel, (e) => save(id, { channel: +e.target.value }));
+  f.velocity = el('input', { type: 'number', min: 1, max: 127, onchange: (e) => save(id, { velocity: +e.target.value }) });
+  f.enabled = el('input', { type: 'checkbox', onchange: (e) => save(id, { enabled: e.target.checked }) });
+  row.append(el('div', { class: 'row fields' },
+    el('label', {}, 'Note', f.note), el('label', {}, 'Ch', f.channel),
+    el('label', {}, 'Vel', f.velocity), el('label', {}, f.enabled, 'On')));
+
+  f.summary = el('div', { class: 'summary small muted' });
+  row.append(f.summary);
+
+  f.releaseMode = el('select', { onchange: (e) => save(id, { releaseMode: e.target.value }) },
+    ...Object.entries(RELEASE_LABELS).map(([k, v]) => el('option', { value: k }, v)));
+  f.holdMs = el('input', { type: 'number', min: 1, max: 60000, onchange: (e) => save(id, { holdMs: +e.target.value }) });
+  f.holdWrap = el('label', {}, 'Hold', f.holdMs, 'ms');
+  const patternInput = (key) => {
+    const i = el('input', { class: 'mono', spellcheck: 'false', placeholder: 'e.g. 002a:01 ?? 3c',
+      onchange: async (e) => { const ok = await save(id, { [key]: e.target.value.trim() }); e.target.classList.toggle('bad', !ok); } });
+    return i;
+  };
+  f.trigger = patternInput('trigger');
+  f.release = patternInput('release');
+  f.gesture = el('ul', { class: 'gesture mono' });
+  f.gestureWrap = el('div', {}, el('div', { class: 'small muted' }, 'Learned gesture (tap a report to trigger on it instead):'), f.gesture);
+  row.append(el('details', {}, el('summary', {}, 'Details'),
+    el('div', { class: 'adv' },
+      el('div', { class: 'row' }, el('label', {}, 'Note off on', f.releaseMode), f.holdWrap),
+      el('label', { class: 'block' }, 'Trigger pattern (handle:bytes, ?? = any)', f.trigger),
+      el('label', { class: 'block' }, 'Release pattern', f.release),
+      f.gestureWrap,
+      el('div', { class: 'row' }, el('button', { class: 'danger small', onclick: () => {
+        if (confirm(`Delete “${f.name.value || '#' + id}”?`)) api('/api/mapping/delete', { id });
+      } }, 'Delete mapping')))));
+  return row;
+}
+
+function updateMapping(row, m) {
+  const f = row.f;
+  const learningThis = S.learn.active && S.learn.id === m.id;
+  row.classList.toggle('disabled', !m.enabled);
+  row.classList.toggle('learning', learningThis);
+  setVal(f.name, m.name);
+  setVal(f.note, m.number);
+  setVal(f.channel, m.channel);
+  setVal(f.velocity, m.velocity);
+  f.enabled.checked = m.enabled;
+  f.learn.disabled = S.learn.active;
+  f.learn.textContent = m.trigger ? 'Re-learn' : 'Learn';
+  setVal(f.releaseMode, m.releaseMode);
+  setVal(f.holdMs, m.holdMs);
+  f.holdWrap.classList.toggle('hidden', m.releaseMode !== 'timed');
+  setVal(f.trigger, m.trigger);
+  setVal(f.release, m.release);
+
+  let sum;
+  if (learningThis) sum = 'Learning…';
+  else if (!m.trigger) sum = 'Not learned yet — press Learn, then press the ring button.';
+  else {
+    const at = m.triggerIndex >= 0 ? `report #${m.triggerIndex} of the gesture` : 'a hand-edited pattern';
+    const off = { report: 'note off on release', gesture: 'note off when the gesture ends', timed: `note off after ${m.holdMs} ms` }[m.releaseMode];
+    sum = `Triggers on ${at}; ${off}.`;
+  }
+  f.summary.textContent = sum;
+
+  f.gestureWrap.classList.toggle('hidden', m.gesture.length === 0);
+  f.gesture.replaceChildren(...m.gesture.map((p, i) => el('li', { class: i === m.triggerIndex ? 'sel' : '' },
+    el('input', { type: 'radio', name: 'g' + m.id, checked: i === m.triggerIndex,
+      onchange: () => api('/api/mapping/pick', { id: m.id, index: i }) }),
+    el('code', {}, `#${i} ${p}`))));
+}
+
+function renderMappings() {
+  const box = $('mappings');
+  const existing = new Map([...box.children].map((r) => [+r.dataset.id, r]));
+  S.mappings.forEach((m, idx) => {
+    let row = existing.get(m.id);
+    if (!row) row = buildMapping(m);
+    existing.delete(m.id);
+    if (box.children[idx] !== row) box.insertBefore(row, box.children[idx] || null);
+    updateMapping(row, m);
+    // Note events drive the lamp; state is only a fallback if events were missed.
+    if (!(Date.now() - (lastNoteEvent[m.id] || 0) < 2000)) row.classList.toggle('on', m.active);
+  });
+  for (const r of existing.values()) r.remove();
+  $('no-mappings').classList.toggle('hidden', S.mappings.length > 0);
+  $('btn-add').disabled = S.learn.active;
+}
+
+function renderSettings() {
+  for (const k of ['gestureGapMs', 'learnSamples', 'learnGapMs', 'learnTailMs']) setVal($('set-' + k), S.settings[k]);
+}
+
+// ---------------------------------------------------------------- actions
+$('btn-scan').onclick = () => api('/api/ble/scan');
+$('scan-more').onclick = () => { showAllScan = !showAllScan; renderRing(); };
+$('btn-add').onclick = async () => {
+  const r = await api('/api/mapping', {});
+  if (r) api('/api/learn/start', { id: r.id });
+};
+$('learn-done').onclick = () => api('/api/learn/finish');
+$('learn-cancel').onclick = () => api('/api/learn/cancel');
+$('learn-close').onclick = () => { learnClosedFor = S.learn.resultId; renderLearn(); };
+$('mon-clear').onclick = () => $('log').replaceChildren();
+$('btn-panic').onclick = () => api('/api/panic');
+for (const k of ['gestureGapMs', 'learnSamples', 'learnGapMs', 'learnTailMs']) {
+  $('set-' + k).onchange = (e) => api('/api/settings', { [k]: +e.target.value });
+}
+$('btn-export').onclick = () => { location.href = '/api/config'; };
+$('file-import').onchange = async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const text = await file.text();
+  e.target.value = '';
+  try { JSON.parse(text); } catch (err) { toast('Not a JSON file'); return; }
+  if (!confirm('Replace all mappings with the imported ones?')) return;
+  const r = await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: text });
+  const j = await r.json().catch(() => ({}));
+  toast(r.ok ? 'Imported' : 'Import failed: ' + (j.error || r.status));
+  rev = -1;
+};
+
+loadState().catch(() => {}).finally(poll);
+</script>
+</body>
+</html>
